@@ -1,11 +1,13 @@
+from email.policy import default
+from ensurepip import version
 import os
 import PySimpleGUI as sg
 
 # --- user inputs
-save_name = "datapacks"
-datapack_name = "temp_name"
-version_no = 10
-description = "temp_pack desc"
+save_name = ""
+datapack_name = ""
+version_no = 0
+description = ""
 predicates = False
 tags = False
 # ---
@@ -13,6 +15,11 @@ tags = False
 # --- const directories
 saves_dir = "AppData/Roaming/.minecraft/saves"
 mc_funcs = "./data/minecraft/tags/functions"
+# ---
+
+# --- const vars
+home_dir = os.path.expanduser('~')
+pack_format = {"1.13-1.14.4":4, "1.15-1.16.1":5, "1.16.2-1.16.5":6, "1.17-1.17.1":7, "1.18-1.18.1":8, "1.18.2":9, "1.19+":10}
 # ---
 
 def makeDirectory(path):
@@ -28,6 +35,11 @@ def writeContents(file, contents):
     for line in contents:
         file.write(line)
 
+def getSaves():
+    saves_path = os.path.join(home_dir, saves_dir)
+    os.chdir(saves_path)
+    return os.listdir()
+
 def createStarter(save_name, datapack_name, version_no, description, predicates, tags):
     # --- file contents
     mcmeta_conts = ["{\n", "\t\"pack\": {\n", f"\t\t\"pack_format\": {version_no},\n", f"\t\t\"description\": \"{description}\",\n", "\t}\n", "}\n"]
@@ -37,7 +49,6 @@ def createStarter(save_name, datapack_name, version_no, description, predicates,
     tick_mcfunc_conts = "# contents of this file are run every tick while the datapack is loaded"
     # ---
 
-    home_dir = os.path.expanduser('~')
     saves_path = os.path.join(home_dir, saves_dir)
 
     datapack_dir = save_name + "/datapacks"
@@ -82,14 +93,71 @@ def createStarter(save_name, datapack_name, version_no, description, predicates,
     tick_mcfunc.write(tick_mcfunc_conts)
     tick_mcfunc.close()
 
+    if predicates:
+        os.chdir(os.path.join(path, f"data/{datapack_name}"))
+        makeDirectory(f"./predicates")
+    
+    if tags:
+        os.chdir(os.path.join(path, f"data/{datapack_name}"))
+        makeDirectory(f"./tags/items")
+
+
 if __name__ == "__main__":
-    # createStarter(save_name, datapack_name, version_no, description, predicates, tags)
-    layout = [[sg.Text("Poggers")], [sg.Text("Poggers but on row 2"), sg.Text("Coggers on row 2")], [sg.Button("Button on Row 3")], [sg.Button("Exit button")]]
-    window = sg.Window("This is the title", layout, size=(960, 540))
-    event, values = window.read()
+    # page to select the save
+    select_save =   [[sg.Text("Choose a Save")], 
+                     [sg.Listbox(values=getSaves(), size=(50, 16), key="-SAVE-")],
+                     [sg.Text("Can't Find it? Browse Instead: "), sg.FolderBrowse(key="-SAVEFOLDER-")],
+                     [sg.Text(size=(40, 1), key="-ERROR-", text_color='yellow')],
+                     [sg.Button("Submit"), sg.Button("Quit")]]
+
+    # page to input pack details
+    make_pack =     [[sg.Text("Datapack Name: "), sg.Input(key="-NAME-", size=(40, 1))],
+                     [sg.Text("Minecraft Version: "), sg.Combo(values=list(pack_format.keys()), default_value="1.19+", key="-FORMAT-")],
+                     [sg.Text("Type a Description:")],
+                     [sg.Multiline(key="-DESC-", size=(50, 10))],
+                     [sg.Checkbox("Use Predicates", default=False, key="-PREDS-"), sg.Checkbox("Use Item Tags", default=False, key="-TAGS-")],
+                     [sg.Text(size=(40, 1), key="-ERROR2-", text_color='yellow')],
+                     [sg.Button("Create Pack!"), sg.Button("Quit")]]
+    
+    # whole layout (using 1 to have it all in 1 window)
+    layout =    [[sg.Column(select_save, key="-SELECTSAVE-"),
+                 sg.Column(make_pack, key="-MAKEPACK-", visible=False)],
+                ]
+
+    # stage to mark what diff buttons do 
+    stage = 1
+    window = sg.Window("Datapack Starter", layout)
+
+    # event loop
     while True:
-        if event in (None, "Exit button"):
+        event, values = window.read()
+        if event == sg.WINDOW_CLOSED or event.startswith("Quit"):
             break
-        else:
-            print(event)
+        match stage:
+            case 1:
+                if event == "Submit":
+                    if len(values["-SAVE-"]) == 0 and len(values["-SAVEFOLDER-"]) == 0:
+                        window["-ERROR-"].update("Please Select a Save")
+                    else:
+                        if len(values["-SAVE-"]) == 0:
+                            save_name = values["-SAVEFOLDER-"].split("/")[-1]
+                        else:
+                            save_name = values["-SAVE-"][0]
+                        window["-SELECTSAVE-"].update(visible=False)
+                        window["-MAKEPACK-"].update(visible=True)
+                        stage = 2
+            case 2:
+                if event == "Create Pack!":
+                    if len(values["-NAME-"]) == 0:
+                        window["-ERROR2-"].update("Please Type a Datapack Name")
+                    else:
+                        datapack_name = values["-NAME-"]
+                        version_no = pack_format[values["-FORMAT-"]]
+                        description = values["-DESC-"]
+                        predicates = values["-PREDS-"]
+                        tags = values["-TAGS-"]
+                        break
+            case _:
+                continue
     window.close()
+    createStarter(save_name, datapack_name, version_no, description, predicates, tags)
